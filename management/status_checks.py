@@ -312,17 +312,17 @@ def run_domain_checks(rounded_time, env, output, pool):
 	# Get the list of domains that we don't serve web for because of a custom CNAME/A record.
 	domains_with_a_records = get_domains_with_a_records(env)
 
-	# Serial version:
-	#for domain in sort_domains(domains_to_check, env):
-	#	run_domain_checks_on_domain(domain, rounded_time, env, dns_domains, dns_zonefiles, mail_domains, web_domains)
+	# Serial version: Other one currently dies...
+	for domain in sort_domains(domains_to_check, env):
+		run_domain_checks_on_domain(domain, rounded_time, env, dns_domains, dns_zonefiles, mail_domains, web_domains, domains_with_a_records)
 
 	# Parallelize the checks across a worker pool.
-	args = ((domain, rounded_time, env, dns_domains, dns_zonefiles, mail_domains, web_domains, domains_with_a_records)
-		for domain in domains_to_check)
-	ret = pool.starmap(run_domain_checks_on_domain, args, chunksize=1)
-	ret = dict(ret) # (domain, output) => { domain: output }
-	for domain in sort_domains(ret, env):
-		ret[domain].playback(output)
+	# args = ((domain, rounded_time, env, dns_domains, dns_zonefiles, mail_domains, web_domains, domains_with_a_records)
+	# 	for domain in domains_to_check)
+	# ret = pool.starmap(run_domain_checks_on_domain, args, chunksize=1)
+	# ret = dict(ret) # (domain, output) => { domain: output }
+	# for domain in sort_domains(ret, env):
+	# 	ret[domain].playback(output)
 
 def run_domain_checks_on_domain(domain, rounded_time, env, dns_domains, dns_zonefiles, mail_domains, web_domains, domains_with_a_records):
 	output = BufferedOutput()

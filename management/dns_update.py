@@ -55,65 +55,6 @@ def get_dns_zones(env):
 	zonefiles.sort(key = lambda zone : zone_order.index(zone[0]) )
 
 	return zonefiles
-
-def do_dns_update(env, force=False):
-	# Write zone files.
-	os.makedirs('/etc/nsd/zones', exist_ok=True)
-	zonefiles = []
-	updated_domains = []
-	for (domain, zonefile, records) in build_zones(env):
-		# The final set of files will be signed.
-		zonefiles.append((domain, zonefile + ".signed"))
-
-		# See if the zone has changed, and if so update the serial number
-		# and write the zone file.
-		if not write_nsd_zone(domain, "/etc/nsd/zones/" + zonefile, records, env, force):
-			# Zone was not updated. There were no changes.
-			continue
-
-		# Mark that we just updated this domain.
-		updated_domains.append(domain)
-
-		# Sign the zone.
-		#
-		# Every time we sign the zone we get a new result, which means
-		# we can't sign a zone without bumping the zone's serial number.
-		# Thus we only sign a zone if write_nsd_zone returned True
-		# indicating the zone changed, and thus it got a new serial number.
-		# write_nsd_zone is smart enough to check if a zone's signature
-		# is nearing expiration and if so it'll bump the serial number
-		# and return True so we get a chance to re-sign it.
-		sign_zone(domain, zonefile, env)
-
-	# Write the main nsd.conf file.
-	if write_nsd_conf(zonefiles, list(get_custom_dns_config(env)), env):
-		# Make sure updated_domains contains *something* if we wrote an updated
-		# nsd.conf so that we know to restart nsd.
-		if len(updated_domains) == 0:
-			updated_domains.append("DNS configuration")
-
-	# Kick nsd if anything changed.
-	if len(updated_domains) > 0:
-		shell('check_call', ["/usr/sbin/service", "nsd", "restart"])
-
-	# Write the OpenDKIM configuration tables for all of the domains.
-	if write_opendkim_tables(get_mail_domains(env), env):
-		# Settings changed. Kick opendkim.
-		shell('check_call', ["/usr/sbin/service", "opendkim", "restart"])
-		if len(updated_domains) == 0:
-			# If this is the only thing that changed?
-			updated_domains.append("OpenDKIM configuration")
-
-	# Clear bind9's DNS cache so our own DNS resolver is up to date.
-	# (ignore errors with trap=True)
-	shell('check_call', ["/usr/sbin/rndc", "flush"], trap=True)
-
-	if len(updated_domains) == 0:
-		# if nothing was updated (except maybe OpenDKIM's files), don't show any output
-		return ""
-	else:
-		return "updated DNS: " + ",".join(updated_domains) + "\n"
-
 ########################################################################
 
 def build_zones(env):
@@ -559,77 +500,6 @@ def dnssec_choose_algo(domain, env):
 	# on existing users. We'll probably want to migrate to SHA256 later.
 	return "RSASHA1-NSEC3-SHA1"
 
-def sign_zone(domain, zonefile, env):
-	algo = dnssec_choose_algo(domain, env)
-	dnssec_keys = load_env_vars_from_file(os.path.join(env['STORAGE_ROOT'], 'dns/dnssec/%s.conf' % algo))
-
-	# In order to use the same keys for all domains, we have to generate
-	# a new .key file with a DNSSEC record for the specific domain. We
-	# can reuse the same key, but it won't validate without a DNSSEC
-	# record specifically for the domain.
-	#
-	# Copy the .key and .private files to /tmp to patch them up.
-	#
-	# Use os.umask and open().write() to securely create a copy that only
-	# we (root) can read.
-	files_to_kill = []
-	for key in ("KSK", "ZSK"):
-		if dnssec_keys.get(key, "").strip() == "": raise Exception("DNSSEC is not properly set up.")
-		oldkeyfn = os.path.join(env['STORAGE_ROOT'], 'dns/dnssec/' + dnssec_keys[key])
-		newkeyfn = '/tmp/' + dnssec_keys[key].replace("_domain_", domain)
-		dnssec_keys[key] = newkeyfn
-		for ext in (".private", ".key"):
-			if not os.path.exists(oldkeyfn + ext): raise Exception("DNSSEC is not properly set up.")
-			with open(oldkeyfn + ext, "r") as fr:
-				keydata = fr.read()
-			keydata = keydata.replace("_domain_", domain) # trick ldns-signkey into letting our generic key be used by this zone
-			fn = newkeyfn + ext
-			prev_umask = os.umask(0o77) # ensure written file is not world-readable
-			try:
-				with open(fn, "w") as fw:
-					fw.write(keydata)
-			finally:
-				os.umask(prev_umask) # other files we write should be world-readable
-			files_to_kill.append(fn)
-
-	# Do the signing.
-	expiry_date = (datetime.datetime.now() + datetime.timedelta(days=30)).strftime("%Y%m%d")
-	shell('check_call', ["/usr/bin/ldns-signzone",
-		# expire the zone after 30 days
-		"-e", expiry_date,
-
-		# use NSEC3
-		"-n",
-
-		# zonefile to sign
-		"/etc/nsd/zones/" + zonefile,
-
-		# keys to sign with (order doesn't matter -- it'll figure it out)
-		dnssec_keys["KSK"],
-		dnssec_keys["ZSK"],
-	])
-
-	# Create a DS record based on the patched-up key files. The DS record is specific to the
-	# zone being signed, so we can't use the .ds files generated when we created the keys.
-	# The DS record points to the KSK only. Write this next to the zone file so we can
-	# get it later to give to the user with instructions on what to do with it.
-	#
-	# We want to be able to validate DS records too, but multiple forms may be valid depending
-	# on the digest type. So we'll write all (both) valid records. Only one DS record should
-	# actually be deployed. Preferebly the first.
-	with open("/etc/nsd/zones/" + zonefile + ".ds", "w") as f:
-		for digest_type in ('2', '1'):
-			rr_ds = shell('check_output', ["/usr/bin/ldns-key2ds",
-				"-n", # output to stdout
-				"-" + digest_type, # 1=SHA1, 2=SHA256
-				dnssec_keys["KSK"] + ".key"
-			])
-			f.write(rr_ds)
-
-	# Remove our temporary file.
-	for fn in files_to_kill:
-		os.unlink(fn)
-
 ########################################################################
 
 def write_opendkim_tables(domains, env):
@@ -894,40 +764,6 @@ def get_secondary_dns(custom_dns, mode=None):
 				values.append(hostname[4:])
 
 	return values
-
-def set_secondary_dns(hostnames, env):
-	if len(hostnames) > 0:
-		# Validate that all hostnames are valid and that all zone-xfer IP addresses are valid.
-		resolver = dns.resolver.get_default_resolver()
-		resolver.timeout = 5
-		for item in hostnames:
-			if not item.startswith("xfr:"):
-				# Resolve hostname.
-				try:
-					response = resolver.query(item, "A")
-				except (dns.resolver.NoNameservers, dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
-					raise ValueError("Could not resolve the IP address of %s." % item)
-			else:
-				# Validate IP address.
-				try:
-					if "/" in item[4:]:
-						v = ipaddress.ip_network(item[4:]) # raises a ValueError if there's a problem
-						if not isinstance(v, ipaddress.IPv4Network): raise ValueError("That's an IPv6 subnet.")
-					else:
-						v = ipaddress.ip_address(item[4:]) # raises a ValueError if there's a problem
-						if not isinstance(v, ipaddress.IPv4Address): raise ValueError("That's an IPv6 address.")
-				except ValueError:
-					raise ValueError("'%s' is not an IPv4 address or subnet." % item[4:])
-
-		# Set.
-		set_custom_dns_record("_secondary_nameserver", "A", " ".join(hostnames), "set", env)
-	else:
-		# Clear.
-		set_custom_dns_record("_secondary_nameserver", "A", None, "set", env)
-
-	# Apply.
-	return do_dns_update(env)
-
 
 def get_custom_dns_records(custom_dns, qname, rtype):
 	for qname1, rtype1, value in custom_dns:

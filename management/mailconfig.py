@@ -589,11 +589,7 @@ def kick(env, mail_result=None):
 			remove_mail_alias(address, env, do_kick=False)
 			results.append("removed alias %s (was to %s; domain no longer used for email)\n" % (address, forwards_to))
 
-	# Update DNS and nginx in case any domains are added/removed.
-
-	from dns_update import do_dns_update
-	results.append( do_dns_update(env) )
-
+	# Update nginx in case any domains are added/removed.
 	from web_update import do_web_update
 	results.append( do_web_update(env) )
 
