@@ -98,7 +98,7 @@ EOF
 # Start service configuration.
 source setup/system.sh
 source setup/ssl.sh
-source setup/dns.sh
+# source setup/dns.sh
 source setup/mail-postfix.sh
 source setup/mail-dovecot.sh
 source setup/mail-users.sh
@@ -109,7 +109,7 @@ source setup/webmail.sh
 source setup/nextcloud.sh
 source setup/zpush.sh
 source setup/management.sh
-source setup/munin.sh
+# source setup/munin.sh
 
 # Wait for the management daemon to start...
 until nc -z -w 4 127.0.0.1 10222
@@ -120,7 +120,7 @@ done
 
 # ...and then have it write the DNS and nginx configuration files and start those
 # services.
-tools/dns_update
+# tools/dns_update
 tools/web_update
 
 # Give fail2ban another restart. The log files may not all have been present when

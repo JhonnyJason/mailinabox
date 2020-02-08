@@ -5,3 +5,4 @@ tools/__pycache__/
 externals/
 .env
 .vagrant
+ubuntu-bionic-18.04-cloudimg-console.log

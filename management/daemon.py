@@ -141,7 +141,7 @@ def me():
 	return json_response(resp)
 
 # MAIL
-
+#region mailRoutes
 @app.route('/mail/users')
 @authorized_personnel_only
 def mail_users():
@@ -218,114 +218,116 @@ def mail_aliases_remove():
 @authorized_personnel_only
 def mail_domains():
     return "".join(x+"\n" for x in get_mail_domains(env))
+#endregion
 
 # DNS
+#region dnsRoutes
+# @app.route('/dns/zones')
+# @authorized_personnel_only
+# def dns_zones():
+# 	from dns_update import get_dns_zones
+# 	return json_response([z[0] for z in get_dns_zones(env)])
 
-@app.route('/dns/zones')
-@authorized_personnel_only
-def dns_zones():
-	from dns_update import get_dns_zones
-	return json_response([z[0] for z in get_dns_zones(env)])
+# @app.route('/dns/update', methods=['POST'])
+# @authorized_personnel_only
+# def dns_update():
+# 	from dns_update import do_dns_update
+# 	try:
+# 		return do_dns_update(env, force=request.form.get('force', '') == '1')
+# 	except Exception as e:
+# 		return (str(e), 500)
 
-@app.route('/dns/update', methods=['POST'])
-@authorized_personnel_only
-def dns_update():
-	from dns_update import do_dns_update
-	try:
-		return do_dns_update(env, force=request.form.get('force', '') == '1')
-	except Exception as e:
-		return (str(e), 500)
+# @app.route('/dns/secondary-nameserver')
+# @authorized_personnel_only
+# def dns_get_secondary_nameserver():
+# 	from dns_update import get_custom_dns_config, get_secondary_dns
+# 	return json_response({ "hostnames": get_secondary_dns(get_custom_dns_config(env), mode=None) })
 
-@app.route('/dns/secondary-nameserver')
-@authorized_personnel_only
-def dns_get_secondary_nameserver():
-	from dns_update import get_custom_dns_config, get_secondary_dns
-	return json_response({ "hostnames": get_secondary_dns(get_custom_dns_config(env), mode=None) })
+# @app.route('/dns/secondary-nameserver', methods=['POST'])
+# @authorized_personnel_only
+# def dns_set_secondary_nameserver():
+# 	from dns_update import set_secondary_dns
+# 	try:
+# 		return set_secondary_dns([ns.strip() for ns in re.split(r"[, ]+", request.form.get('hostnames') or "") if ns.strip() != ""], env)
+# 	except ValueError as e:
+# 		return (str(e), 400)
 
-@app.route('/dns/secondary-nameserver', methods=['POST'])
-@authorized_personnel_only
-def dns_set_secondary_nameserver():
-	from dns_update import set_secondary_dns
-	try:
-		return set_secondary_dns([ns.strip() for ns in re.split(r"[, ]+", request.form.get('hostnames') or "") if ns.strip() != ""], env)
-	except ValueError as e:
-		return (str(e), 400)
+# @app.route('/dns/custom')
+# @authorized_personnel_only
+# def dns_get_records(qname=None, rtype=None):
+# 	from dns_update import get_custom_dns_config
+# 	return json_response([
+# 	{
+# 		"qname": r[0],
+# 		"rtype": r[1],
+# 		"value": r[2],
+# 	}
+# 	for r in get_custom_dns_config(env)
+# 	if r[0] != "_secondary_nameserver"
+# 		and (not qname or r[0] == qname)
+# 		and (not rtype or r[1] == rtype) ])
 
-@app.route('/dns/custom')
-@authorized_personnel_only
-def dns_get_records(qname=None, rtype=None):
-	from dns_update import get_custom_dns_config
-	return json_response([
-	{
-		"qname": r[0],
-		"rtype": r[1],
-		"value": r[2],
-	}
-	for r in get_custom_dns_config(env)
-	if r[0] != "_secondary_nameserver"
-		and (not qname or r[0] == qname)
-		and (not rtype or r[1] == rtype) ])
+# @app.route('/dns/custom/<qname>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+# @app.route('/dns/custom/<qname>/<rtype>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+# @authorized_personnel_only
+# def dns_set_record(qname, rtype="A"):
+# 	from dns_update import do_dns_update, set_custom_dns_record
+# 	try:
+# 		# Normalize.
+# 		rtype = rtype.upper()
 
-@app.route('/dns/custom/<qname>', methods=['GET', 'POST', 'PUT', 'DELETE'])
-@app.route('/dns/custom/<qname>/<rtype>', methods=['GET', 'POST', 'PUT', 'DELETE'])
-@authorized_personnel_only
-def dns_set_record(qname, rtype="A"):
-	from dns_update import do_dns_update, set_custom_dns_record
-	try:
-		# Normalize.
-		rtype = rtype.upper()
+# 		# Read the record value from the request BODY, which must be
+# 		# ASCII-only. Not used with GET.
+# 		value = request.stream.read().decode("ascii", "ignore").strip()
 
-		# Read the record value from the request BODY, which must be
-		# ASCII-only. Not used with GET.
-		value = request.stream.read().decode("ascii", "ignore").strip()
+# 		if request.method == "GET":
+# 			# Get the existing records matching the qname and rtype.
+# 			return dns_get_records(qname, rtype)
 
-		if request.method == "GET":
-			# Get the existing records matching the qname and rtype.
-			return dns_get_records(qname, rtype)
+# 		elif request.method in ("POST", "PUT"):
+# 			# There is a default value for A/AAAA records.
+# 			if rtype in ("A", "AAAA") and value == "":
+# 				value = request.environ.get("HTTP_X_FORWARDED_FOR") # normally REMOTE_ADDR but we're behind nginx as a reverse proxy
 
-		elif request.method in ("POST", "PUT"):
-			# There is a default value for A/AAAA records.
-			if rtype in ("A", "AAAA") and value == "":
-				value = request.environ.get("HTTP_X_FORWARDED_FOR") # normally REMOTE_ADDR but we're behind nginx as a reverse proxy
+# 			# Cannot add empty records.
+# 			if value == '':
+# 				return ("No value for the record provided.", 400)
 
-			# Cannot add empty records.
-			if value == '':
-				return ("No value for the record provided.", 400)
+# 			if request.method == "POST":
+# 				# Add a new record (in addition to any existing records
+# 				# for this qname-rtype pair).
+# 				action = "add"
+# 			elif request.method == "PUT":
+# 				# In REST, PUT is supposed to be idempotent, so we'll
+# 				# make this action set (replace all records for this
+# 				# qname-rtype pair) rather than add (add a new record).
+# 				action = "set"
 
-			if request.method == "POST":
-				# Add a new record (in addition to any existing records
-				# for this qname-rtype pair).
-				action = "add"
-			elif request.method == "PUT":
-				# In REST, PUT is supposed to be idempotent, so we'll
-				# make this action set (replace all records for this
-				# qname-rtype pair) rather than add (add a new record).
-				action = "set"
+# 		elif request.method == "DELETE":
+# 			if value == '':
+# 				# Delete all records for this qname-type pair.
+# 				value = None
+# 			else:
+# 				# Delete just the qname-rtype-value record exactly.
+# 				pass
+# 			action = "remove"
 
-		elif request.method == "DELETE":
-			if value == '':
-				# Delete all records for this qname-type pair.
-				value = None
-			else:
-				# Delete just the qname-rtype-value record exactly.
-				pass
-			action = "remove"
+# 		if set_custom_dns_record(qname, rtype, value, action, env):
+# 			return do_dns_update(env) or "Something isn't right."
+# 		return "OK"
 
-		if set_custom_dns_record(qname, rtype, value, action, env):
-			return do_dns_update(env) or "Something isn't right."
-		return "OK"
-
-	except ValueError as e:
-		return (str(e), 400)
+# 	except ValueError as e:
+# 		return (str(e), 400)
 
 @app.route('/dns/dump')
 @authorized_personnel_only
 def dns_get_dump():
 	from dns_update import build_recommended_dns
 	return json_response(build_recommended_dns(env))
+#endregion
 
 # SSL
-
+#region sslRoutes
 @app.route('/ssl/status')
 @authorized_personnel_only
 def ssl_get_status():
@@ -382,10 +384,10 @@ def ssl_provision_certs():
 	from ssl_certificates import provision_certificates
 	requests = provision_certificates(env, limit_domains=None)
 	return json_response({ "requests": requests })
-
+#endregion
 
 # WEB
-
+#region webRoutes
 @app.route('/web/domains')
 @authorized_personnel_only
 def web_get_domains():
@@ -397,6 +399,7 @@ def web_get_domains():
 def web_update():
 	from web_update import do_web_update
 	return do_web_update(env)
+#endregion
 
 # System
 
@@ -521,70 +524,71 @@ def privacy_status_set():
 	return "OK"
 
 # MUNIN
+#region muninRoute
+# @app.route('/munin/')
+# @app.route('/munin/<path:filename>')
+# @authorized_personnel_only
+# def munin(filename=""):
+# 	# Checks administrative access (@authorized_personnel_only) and then just proxies
+# 	# the request to static files.
+# 	if filename == "": filename = "index.html"
+# 	return send_from_directory("/var/cache/munin/www", filename)
 
-@app.route('/munin/')
-@app.route('/munin/<path:filename>')
-@authorized_personnel_only
-def munin(filename=""):
-	# Checks administrative access (@authorized_personnel_only) and then just proxies
-	# the request to static files.
-	if filename == "": filename = "index.html"
-	return send_from_directory("/var/cache/munin/www", filename)
+# @app.route('/munin/cgi-graph/<path:filename>')
+# @authorized_personnel_only
+# def munin_cgi(filename):
+# 	""" Relay munin cgi dynazoom requests
+# 	/usr/lib/munin/cgi/munin-cgi-graph is a perl cgi script in the munin package
+# 	that is responsible for generating binary png images _and_ associated HTTP
+# 	headers based on parameters in the requesting URL. All output is written
+# 	to stdout which munin_cgi splits into response headers and binary response
+# 	data.
+# 	munin-cgi-graph reads environment variables to determine
+# 	what it should do. It expects a path to be in the env-var PATH_INFO, and a
+# 	querystring to be in the env-var QUERY_STRING.
+# 	munin-cgi-graph has several failure modes. Some write HTTP Status headers and
+# 	others return nonzero exit codes.
+# 	Situating munin_cgi between the user-agent and munin-cgi-graph enables keeping
+# 	the cgi script behind mailinabox's auth mechanisms and avoids additional
+# 	support infrastructure like spawn-fcgi.
+# 	"""
 
-@app.route('/munin/cgi-graph/<path:filename>')
-@authorized_personnel_only
-def munin_cgi(filename):
-	""" Relay munin cgi dynazoom requests
-	/usr/lib/munin/cgi/munin-cgi-graph is a perl cgi script in the munin package
-	that is responsible for generating binary png images _and_ associated HTTP
-	headers based on parameters in the requesting URL. All output is written
-	to stdout which munin_cgi splits into response headers and binary response
-	data.
-	munin-cgi-graph reads environment variables to determine
-	what it should do. It expects a path to be in the env-var PATH_INFO, and a
-	querystring to be in the env-var QUERY_STRING.
-	munin-cgi-graph has several failure modes. Some write HTTP Status headers and
-	others return nonzero exit codes.
-	Situating munin_cgi between the user-agent and munin-cgi-graph enables keeping
-	the cgi script behind mailinabox's auth mechanisms and avoids additional
-	support infrastructure like spawn-fcgi.
-	"""
+# 	COMMAND = 'su - munin --preserve-environment --shell=/bin/bash -c /usr/lib/munin/cgi/munin-cgi-graph'
+# 	# su changes user, we use the munin user here
+# 	# --preserve-environment retains the environment, which is where Popen's `env` data is
+# 	# --shell=/bin/bash ensures the shell used is bash
+# 	# -c "/usr/lib/munin/cgi/munin-cgi-graph" passes the command to run as munin
+# 	# "%s" is a placeholder for where the request's querystring will be added
 
-	COMMAND = 'su - munin --preserve-environment --shell=/bin/bash -c /usr/lib/munin/cgi/munin-cgi-graph'
-	# su changes user, we use the munin user here
-	# --preserve-environment retains the environment, which is where Popen's `env` data is
-	# --shell=/bin/bash ensures the shell used is bash
-	# -c "/usr/lib/munin/cgi/munin-cgi-graph" passes the command to run as munin
-	# "%s" is a placeholder for where the request's querystring will be added
+# 	if filename == "":
+# 		return ("a path must be specified", 404)
 
-	if filename == "":
-		return ("a path must be specified", 404)
+# 	query_str = request.query_string.decode("utf-8", 'ignore')
 
-	query_str = request.query_string.decode("utf-8", 'ignore')
+# 	env = {'PATH_INFO': '/%s/' % filename, 'REQUEST_METHOD': 'GET', 'QUERY_STRING': query_str}
+# 	code, binout = utils.shell('check_output',
+# 							   COMMAND.split(" ", 5),
+# 							   # Using a maxsplit of 5 keeps the last arguments together
+# 							   env=env,
+# 							   return_bytes=True,
+# 							   trap=True)
 
-	env = {'PATH_INFO': '/%s/' % filename, 'REQUEST_METHOD': 'GET', 'QUERY_STRING': query_str}
-	code, binout = utils.shell('check_output',
-							   COMMAND.split(" ", 5),
-							   # Using a maxsplit of 5 keeps the last arguments together
-							   env=env,
-							   return_bytes=True,
-							   trap=True)
+# 	if code != 0:
+# 		# nonzero returncode indicates error
+# 		app.logger.error("munin_cgi: munin-cgi-graph returned nonzero exit code, %s", code)
+# 		return ("error processing graph image", 500)
 
-	if code != 0:
-		# nonzero returncode indicates error
-		app.logger.error("munin_cgi: munin-cgi-graph returned nonzero exit code, %s", code)
-		return ("error processing graph image", 500)
-
-	# /usr/lib/munin/cgi/munin-cgi-graph returns both headers and binary png when successful.
-	# A double-Windows-style-newline always indicates the end of HTTP headers.
-	headers, image_bytes = binout.split(b'\r\n\r\n', 1)
-	response = make_response(image_bytes)
-	for line in headers.splitlines():
-		name, value = line.decode("utf8").split(':', 1)
-		response.headers[name] = value
-	if 'Status' in response.headers and '404' in response.headers['Status']:
-		app.logger.warning("munin_cgi: munin-cgi-graph returned 404 status code. PATH_INFO=%s", env['PATH_INFO'])
-	return response
+# 	# /usr/lib/munin/cgi/munin-cgi-graph returns both headers and binary png when successful.
+# 	# A double-Windows-style-newline always indicates the end of HTTP headers.
+# 	headers, image_bytes = binout.split(b'\r\n\r\n', 1)
+# 	response = make_response(image_bytes)
+# 	for line in headers.splitlines():
+# 		name, value = line.decode("utf8").split(':', 1)
+# 		response.headers[name] = value
+# 	if 'Status' in response.headers and '404' in response.headers['Status']:
+# 		app.logger.warning("munin_cgi: munin-cgi-graph returned 404 status code. PATH_INFO=%s", env['PATH_INFO'])
+# 	return response
+#endregion
 
 def log_failed_login(request):
 	# We need to figure out the ip to list in the message, all our calls are routed

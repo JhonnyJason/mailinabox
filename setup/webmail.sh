@@ -101,7 +101,7 @@ SECRET_KEY=$(dd if=/dev/urandom bs=1 count=18 2>/dev/null | base64 | fold -w 24 
 cat > $RCM_CONFIG <<EOF;
 <?php
 /*
- * Do not edit. Written by Mail-in-a-Box. Regenerated on updates.
+ * Do not edit here. Written by Mail-in-a-Box (setup/webmail.sh). Regenerated on updates.
  */
 \$config = array();
 \$config['log_dir'] = '/var/log/roundcubemail/';
@@ -123,7 +123,7 @@ cat > $RCM_CONFIG <<EOF;
      'verify_peer_name'  => false,
    ),
  );
-\$config['support_url'] = 'https://mailinabox.email/';
+\$config['support_url'] = 'tel:+436506644025';
 \$config['product_name'] = '$PRIMARY_HOSTNAME Webmail';
 \$config['des_key'] = '$SECRET_KEY';
 \$config['plugins'] = array('html5_notifier', 'archive', 'zipdownload', 'password', 'managesieve', 'jqueryui', 'persistent_login', 'carddav');
@@ -137,7 +137,7 @@ EOF
 # Configure CardDav
 cat > ${RCM_PLUGIN_DIR}/carddav/config.inc.php <<EOF;
 <?php
-/* Do not edit. Written by Mail-in-a-Box. Regenerated on updates. */
+/* Do not edit here. Written by Mail-in-a-Box (setup/webmail.sh). Regenerated on updates. */
 \$prefs['_GLOBAL']['hide_preferences'] = true;
 \$prefs['_GLOBAL']['suppress_version_warning'] = true;
 \$prefs['ownCloud'] = array(

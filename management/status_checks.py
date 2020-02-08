@@ -20,9 +20,9 @@ from utils import shell, sort_domains, load_env_vars_from_file, load_settings
 
 def get_services():
 	return [
-		{ "name": "Local DNS (bind9)", "port": 53, "public": False, },
+		# { "name": "Local DNS (bind9)", "port": 53, "public": False, },
 		#{ "name": "NSD Control", "port": 8952, "public": False, },
-		{ "name": "Local DNS Control (bind9/rndc)", "port": 953, "public": False, },
+		# { "name": "Local DNS Control (bind9/rndc)", "port": 953, "public": False, },
 		{ "name": "Dovecot LMTP LDA", "port": 10026, "public": False, },
 		{ "name": "Postgrey", "port": 10023, "public": False, },
 		{ "name": "Spamassassin", "port": 10025, "public": False, },
@@ -30,7 +30,7 @@ def get_services():
 		{ "name": "OpenDMARC", "port": 8893, "public": False, },
 		{ "name": "Mail-in-a-Box Management Daemon", "port": 10222, "public": False, },
 		{ "name": "SSH Login (ssh)", "port": get_ssh_port(), "public": True, },
-		{ "name": "Public DNS (nsd4)", "port": 53, "public": True, },
+		# { "name": "Public DNS (nsd4)", "port": 53, "public": True, },
 		{ "name": "Incoming Mail (SMTP/postfix)", "port": 25, "public": True, },
 		{ "name": "Outgoing Mail (SMTP 587/postfix)", "port": 587, "public": True, },
 		#{ "name": "Postfix/master", "port": 10587, "public": True, },
@@ -366,29 +366,7 @@ def check_primary_hostname_dns(domain, env, output, dns_domains, dns_zonefiles):
 				check_dnssec(zone, env, output, dns_zonefiles, is_checking_primary=True)
 
 	ip = query_dns(domain, "A")
-	ns_ips = query_dns("ns1." + domain, "A") + '/' + query_dns("ns2." + domain, "A")
 	my_ips = env['PUBLIC_IP'] + ((" / "+env['PUBLIC_IPV6']) if env.get("PUBLIC_IPV6") else "")
-
-	# Check that the ns1/ns2 hostnames resolve to A records. This information probably
-	# comes from the TLD since the information is set at the registrar as glue records.
-	# We're probably not actually checking that here but instead checking that we, as
-	# the nameserver, are reporting the right info --- but if the glue is incorrect this
-	# will probably fail.
-	if ns_ips == env['PUBLIC_IP'] + '/' + env['PUBLIC_IP']:
-		output.print_ok("Nameserver glue records are correct at registrar. [ns1/ns2.%s ↦ %s]" % (env['PRIMARY_HOSTNAME'], env['PUBLIC_IP']))
-
-	elif ip == env['PUBLIC_IP']:
-		# The NS records are not what we expect, but the domain resolves correctly, so
-		# the user may have set up external DNS. List this discrepancy as a warning.
-		output.print_warning("""Nameserver glue records (ns1.%s and ns2.%s) should be configured at your domain name
-			registrar as having the IP address of this box (%s). They currently report addresses of %s. If you have set up External DNS, this may be OK."""
-			% (env['PRIMARY_HOSTNAME'], env['PRIMARY_HOSTNAME'], env['PUBLIC_IP'], ns_ips))
-
-	else:
-		output.print_error("""Nameserver glue records are incorrect. The ns1.%s and ns2.%s nameservers must be configured at your domain name
-			registrar as having the IP address %s. They currently report addresses of %s. It may take several hours for
-			public DNS to update after a change."""
-			% (env['PRIMARY_HOSTNAME'], env['PRIMARY_HOSTNAME'], env['PUBLIC_IP'], ns_ips))
 
 	# Check that PRIMARY_HOSTNAME resolves to PUBLIC_IP[V6] in public DNS.
 	ipv6 = query_dns(domain, "AAAA") if env.get("PUBLIC_IPV6") else None
@@ -449,58 +427,17 @@ def check_dns_zone(domain, env, output, dns_zonefiles):
 	if query_dns(domain, "DS", nxdomain=None) is not None:
 		check_dnssec(domain, env, output, dns_zonefiles)
 
-	# We provide a DNS zone for the domain. It should have NS records set up
-	# at the domain name's registrar pointing to this box. The secondary DNS
-	# server may be customized.
-	# (I'm not sure whether this necessarily tests the TLD's configuration,
-	# as it should, or if one successful NS line at the TLD will result in
-	# this query being answered by the box, which would mean the test is only
-	# half working.)
-
-	custom_dns_records = list(get_custom_dns_config(env)) # generator => list so we can reuse it
-	correct_ip = "; ".join(sorted(get_custom_dns_records(custom_dns_records, domain, "A"))) or env['PUBLIC_IP']
-	custom_secondary_ns = get_secondary_dns(custom_dns_records, mode="NS")
-	secondary_ns = custom_secondary_ns or ["ns2." + env['PRIMARY_HOSTNAME']]
-
-	existing_ns = query_dns(domain, "NS")
-	correct_ns = "; ".join(sorted(["ns1." + env['PRIMARY_HOSTNAME']] + secondary_ns))
+	correct_ip = env['PUBLIC_IP']
 	ip = query_dns(domain, "A")
 
-	probably_external_dns = False
+	probably_external_dns = True
 
-	if existing_ns.lower() == correct_ns.lower():
-		output.print_ok("Nameservers are set correctly at registrar. [%s]" % correct_ns)
-	elif ip == correct_ip:
+	if ip == correct_ip:
 		# The domain resolves correctly, so maybe the user is using External DNS.
-		output.print_warning("""The nameservers set on this domain at your domain name registrar should be %s. They are currently %s.
-			If you are using External DNS, this may be OK."""
-				% (correct_ns, existing_ns) )
-		probably_external_dns = True
+		output.print_ok("""Your nameservers resolve the ip address (%s) correctly.""", ip)
 	else:
-		output.print_error("""The nameservers set on this domain are incorrect. They are currently %s. Use your domain name registrar's
-			control panel to set the nameservers to %s."""
-				% (existing_ns, correct_ns) )
+		output.print_error("""The nameservers resolve to a wrong ip address (%s). It should be (%s).""" % (ip, correct_ip))
 
-	# Check that each custom secondary nameserver resolves the IP address.
-
-	if custom_secondary_ns and not probably_external_dns:
-		for ns in custom_secondary_ns:
-			# We must first resolve the nameserver to an IP address so we can query it.
-			ns_ips = query_dns(ns, "A")
-			if not ns_ips:
-				output.print_error("Secondary nameserver %s is not valid (it doesn't resolve to an IP address)." % ns)
-				continue
-			# Choose the first IP if nameserver returns multiple
-			ns_ip = ns_ips.split('; ')[0]
-
-			# Now query it to see what it says about this domain.
-			ip = query_dns(domain, "A", at=ns_ip, nxdomain=None)
-			if ip == correct_ip:
-				output.print_ok("Secondary nameserver %s resolved the domain correctly." % ns)
-			elif ip is None:
-				output.print_error("Secondary nameserver %s is not configured to resolve this domain." % ns)
-			else:
-				output.print_error("Secondary nameserver %s is not configured correctly. (It resolved this domain as %s. It should be %s.)" % (ns, ip, correct_ip))
 
 def check_dns_zone_suggestions(domain, env, output, dns_zonefiles, domains_with_a_records):
 	# Warn if a custom DNS record is preventing this or the automatic www redirect from
